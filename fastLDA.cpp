@@ -14,53 +14,67 @@ Important : Read usage instructions before building and running (given in README
 #include<time.h>
 using namespace std;
 
-// Initialize number of documents, topics and words in vocabulary
+// Initialize number of documents (D), topics (K) and words (W) in vocabulary
 unsigned int W,D,K;
 
 int main(int argc, char* argv[])
 {
-    if(argc < 4)
-    {
-        printf("Usage: ./fastLDA inputfile num_iterations num_topics [optional:minibatch size]\n");
-        return 1;
-    }
+   
 
-    // Initlialize expected topic counts per document
+    /* Initialize variables for inference
+       N_theta : Expected topic counts per document
+       N_phi : Expected topic counts per word
+       N_z : Expected topic counts overall */
+    
     float **N_theta;
-    // Dynamically
     float **N_phi;
     float *N_z;
+
+    /* Initialize rho_theta (step size for N_theta) and rho_phi (step size for N_phi)
+       gamma_ij[k] : Variational distribution for word (i,j)
+       phi : Distribution over words for topic
+       theta : Distribution over topics for document */
     float rho_theta=0;
     float rho_phi=0;
     float *gamma_ij;
     float **phi;
     float **theta;
-    float *perplexities;
+    
+    /* Initialization of other parameters */
+    
     int cnt;
-    // Initlalize dirichlet prior parameters
-    float alpha,eta;
-    float M; // Number of documents in each minibatch
+    float alpha,eta;  // Dirchlet prior parameters   
+    float M;  // Number of documents in each minibatch
     int j,Cj=0,i,k,w;
     double norm_sum=0;
     int batch_idx=0;
     int C=0;
-    //int *C_j;
-    int MAXITER;
-    int iter=0;
+   
+    int MAXITER;  // Maximum number of iterations
+    int iter=0;  // Counter for iterations
     unsigned int i_cnt=0;
     int NNZ;
     float perplexityval,innerval;
  
     int m_aj;     
     
-    M=100; //343 works for KOS and only for KOS
-    eta=0.01;// was 0.01
+    /* Set default Dirichlet prior parameter values 
+       eta and alpha can be modified below */
+    
+    eta=0.01;
     alpha=0.1;
 
-      
-    MAXITER = atoi(argv[2]);
-    K = atoi(argv[3]);
+    
+    if(argc < 6)
+    {
+        printf("Usage: ./fastLDA inputfile vocabfile num_iterations num_topics minibatch_size topics_file doctopics_file\n");
+        return 1;
+    }
+ 
+    MAXITER = atoi(argv[3]);
+    K = atoi(argv[4]);
 
+    // Display input file and parameter settings
     printf("Input file: %s\n",argv[1]);
     printf("Number of iterations: %d\n",MAXITER);
     printf("Number of topics: %d\n",K);
@@ -75,6 +89,8 @@ int main(int argc, char* argv[])
 
     fptr=fopen(argv[1],"rt");
 
+
+    /* Read number of documents, number of words and non-zero counts in the bag of words */
     fscanf(fptr, "%d\n", &D);
     fscanf(fptr, "%d\n", &W);
     fscanf(fptr, "%d\n", &NNZ);
@@ -102,42 +118,27 @@ int main(int argc, char* argv[])
         theta[i]=new float[K];
     }
 
-    printf("allocated theta\n");
-
-    printf("allocated data\n");
-
-    //if user also specified a minibatch size
-    if(argc == 5 || argc==6)
-    {
-        M = atof(argv[4]);
-    }
+    
+    
+    M = atof(argv[5]);
+    
 
     vector <vector <int> > corpus;
     vector<int> corpus_size(D,0);
     corpus.resize(D);
-    //vector <vector <int> > corpus_expanded;
-    //corpus_expanded.resize(D);
-
+    
+    /* For each row in the file, read the document number, word number and the number of counts */  
     while(!feof(fptr))
     {
         fscanf(fptr,"%d %d %hhu\n",&docnum,&wnum,&countnum);
-       
-            corpus[docnum-1].push_back(wnum-1);
-            corpus[docnum-1].push_back(countnum);
-            
-            corpus_size[docnum-1]+=countnum;
-        /*
-        for(i=0;i<countnum;i++)
-        {
-	    corpus_expanded[docnum-1].push_back(wnum-1);
-        }
-        */
-     
+      
+        corpus[docnum-1].push_back(wnum-1);
+        corpus[docnum-1].push_back(countnum);
+        corpus_size[docnum-1]+=countnum;
     }
     fclose(fptr);
 
    
-
     // Initialize phi_est and all other arrays
  
     N_phi=new float*[W];
@@ -160,7 +161,6 @@ int main(int argc, char* argv[])
 
     // Initialize n_z and n_z_est and other arrays
     N_z=new float[K];
-    //N_z_est=new float[K];
     
     for (k=0;k<K;k++)
     {
@@ -175,12 +175,6 @@ int main(int argc, char* argv[])
         {
             N_z[k]+=N_phi[w][k];
         }
-    }
-
-    perplexities = new float[MAXITER];
-    for (i=0;i<MAXITER;i++)
-    {
-      perplexities[i]=0;
     }
 
     N_theta=new float*[D];
@@ -203,30 +197,29 @@ int main(int argc, char* argv[])
         C += corpus_size[j];
     }
 
-    printf("Number of words in corpus: %d\n", C);
-
-    //gamma_ij=new float[K];
-
+   
     int firstdoc = 0;
     int lastdoc = 0;
     int DM = D/M;
 
     for (iter=0;iter<MAXITER;iter++)
     {
-        // Decide rho_phi and rho_theta
+        /* Update rules for stepsizes for theta and phi
+           Insert your own update rules here. */
         rho_phi=10/pow((1000+iter),0.9);
         rho_theta=1/pow((10+iter),0.9);
 
+        /* Initializes threads and indicates variable copies private to each thread */
 	#pragma omp parallel private(batch_idx,j,k,norm_sum,i,w,firstdoc,lastdoc)
         {
         float *gamma_ij = new float[K];
         float *N_z_est = new float[K];
         float **N_phi_est = new float *[W];
-        for (k=0;k<K;k++)
+	for (k=0;k<K;k++)
         {
-            gamma_ij[k]=0;
-            N_z_est[k]=0;
-        }
+           	gamma_ij[k]=0;
+            	N_z_est[k]=0;
+       	}
         for (i=0;i<W;i++)
         {
             N_phi_est[i]=new float[K];
@@ -236,21 +229,23 @@ int main(int argc, char* argv[])
             }
         }
 
+        /* Parallelizes over minibatches */
         #pragma omp for
         for (batch_idx=0;batch_idx<DM;batch_idx++)
         {
             firstdoc = batch_idx*M;
             lastdoc = (batch_idx+1)*M;
 
+
+            /* Iterates over documents in the corpus */
 	    for (j=firstdoc;j<lastdoc;j++)
             {	        
-                
                 
                 // Store size of corpus in Cj
                 Cj=corpus_size[j];
                
                
-                for (i=0;i<(corpus[j].size()/2);i++) // indexing is very different here!
+                for (i=0;i<(corpus[j].size()/2);i++)  // indexing is very different here
                 {
                     
                     int w_aj=corpus[j][2*i];
@@ -276,7 +271,7 @@ int main(int argc, char* argv[])
                     {
 
                       N_theta[j][k]=(pow((1-rho_theta),m_aj)*N_theta[j][k])+((1-pow((1-rho_theta),m_aj))*Cj*gamma_ij[k]);
-//                      	      
+               	      
                     }
 
                 }
@@ -298,7 +293,7 @@ int main(int argc, char* argv[])
                         norm_sum+=gamma_ij[k];
                     }
 
-                    //# pragma omp parallel for
+                    
                     for (k=0;k<K;k++)
                     {
                         gamma_ij[k]=gamma_ij[k]/norm_sum;
@@ -309,10 +304,9 @@ int main(int argc, char* argv[])
                     {
                         N_theta[j][k]=(pow((1-rho_theta),m_aj)*N_theta[j][k])+((1-pow((1-rho_theta),m_aj))*Cj*gamma_ij[k]);
                         N_phi_est[w_aj][k]=N_phi_est[w_aj][k]+(C*gamma_ij[k]/M);
-
                         N_z_est[k]=N_z_est[k]+(C*gamma_ij[k]/M);
                     }
-                }
+                }  // End of i
                
             } // End of j
 
@@ -329,12 +323,12 @@ int main(int argc, char* argv[])
                 #pragma omp atomic
                 N_z[k]+=rho_phi*N_z_est[k];
                
-            }
+            }  //End of k
              
         } // End of batch_idx
         
-/*--------------------------------------COMPUTATION OF THETA AND PHI---------------------------------*/
-        // Compute phi
+        /*--------------------------------------COMPUTATION OF THETA AND PHI---------------------------------*/
+        // Compute phi in a parallelized manner
         #pragma omp for
         for (k=0;k<K;k++)
         {
@@ -350,7 +344,7 @@ int main(int argc, char* argv[])
             }
         }
 
-        // Compute theta
+        // Compute theta in a parallelized manner
         #pragma omp for
         for (i=0;i<D;i++)
         {
@@ -366,6 +360,8 @@ int main(int argc, char* argv[])
             }
         }
 
+
+        /* Free memory allocated to gamma_ij, N_z_est and N_phi_est since not needed in each thread after minibatch processing */ 
         delete [] gamma_ij;
         delete [] N_z_est;
 
@@ -378,35 +374,12 @@ int main(int argc, char* argv[])
 
         }
 
-/******************************************CALCULATE PERPLEXITY**************************************************
-        // Calculate the perplexity here
-        // Compute posterior means here
-        // Iterate over the corpus here
-        perplexityval=0;
-        #pragma omp parallel for private(j,i,k) reduction(+:innerval) reduction(+:perplexityval)
-        for (j=0;j<D;j++)
-	{
-		for (i=0;i<corpus_expanded[j].size();i++)
-		{
-                        innerval=0;
-			for (k=0;k<K;k++)
-			{
-				innerval+=(theta[j][k]*phi[corpus_expanded[j][i]][k]);
-			}
-			perplexityval+=(log(innerval)/log(2));
-		}
-	}
-	printf("%d,%f\n",iter,pow(2,-perplexityval/C));
-        perplexities[iter] = pow(2,-perplexityval/C);
-        
-        pfile << iter+1 << "," << perplexities[iter] << endl;
-        pfile.flush();
-*/
+
     } // End of iter
  
-    //write doctopics file
+    /* Write out the topic distributions for each word */
     ofstream dtfile;
-    dtfile.open("doctopic.txt");
+    dtfile.open(argv[7]);
     for (i=0;i<D;i++)
     {
         for (k=0;k<K;k++)
@@ -447,32 +420,31 @@ int main(int argc, char* argv[])
             maxval[k][i]=max;
 	}   
     }
-    
-    //printf("1\n");
+   
+    /* Retrieve words from the vocabulary file for writing out top 100 words for each topic to output file */
     string *dict;
-    dict = new string[W];
-    /*fptr=fopen(argv[5],"rt");
-    printf("after fptr\n");
-    char word;*/
-    
-    // while(!feof(fptr))
-    // {
-        
-    //     fscanf(fptr,"%s\n",&word);
-    // 	dict[w]=word;
-    // 	w++;
-    // 	printf("%d",w);
-    // }
-    // fclose(fptr);
+    dict=new string[W];
+    w=0;
+    string line;
+    ifstream vocab_file (argv[2]);
+    if (vocab_file.is_open())
+    {
+    	while (getline(vocab_file,line))
+        {
+        	dict[w]=line;
+		w++;
+	}
+	vocab_file.close();
+    }
 
-    //write topics file
+    /* Write out top words for each topic */
     ofstream tfile;
-    tfile.open("topics.txt");
+    tfile.open(argv[6]);
     for (k=0;k<K;k++)
     {
         for (w=0;w<100;w++)
         {
-            tfile << topwords[k][w] << ":" << maxval[k][w] << ",";
+            tfile << dict[topwords[k][w]] << ":" << maxval[k][w] << ",";
 
             
         }
