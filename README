@@ -1,0 +1,11 @@
+IMPORTANT:
+1. Make sure that minibatch size divides the total number of documents. For example in KOS dataset, the minibatch size could be 343.
+To pass in variable minibatch size add it as an optional last argument.
+
+2. For running time please refer to the report. We find that for NYTimes convergence as soon as 200 iterations, about 1.5 days of operation. 
+
+3. Running the makefiles :
+
+'make all' : Build with OpenMP flag [ Normal paralleized operation]
+'make serial' : Build without OpenMP flag (not recommended)
+'make clean' : Removes executable created by previous make
