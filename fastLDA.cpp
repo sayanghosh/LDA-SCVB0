@@ -71,6 +71,7 @@ int main(int argc, char* argv[])
         return 1;
     }
  
+    M = atof(argv[5]);
     MAXITER = atoi(argv[3]);
     K = atoi(argv[4]);
 
@@ -119,8 +120,6 @@ int main(int argc, char* argv[])
     }
 
     
-    
-    M = atof(argv[5]);
     
 
     vector <vector <int> > corpus;
