@@ -1,6 +1,7 @@
 /* Implementation of fast parallel algorithm for LDA : SCVB0
 Authors : Sayan Ghosh, Atamananda Persaud
 Important : Read usage instructions before building and running (given in README file)
+Read the disclaimer regarding usage of this code for a course project
 */
 
 #include<math.h>
